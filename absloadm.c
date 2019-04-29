@@ -10,7 +10,7 @@
 #define  NSPIS  5                                 /*разм.списка загр.прогр. */
 #define  NOBJ   50                                /*разм.масс.об'ектных карт*/
 #define  DOBLZ  1024                              /*длина области загрузки  */
-#define  NOP 6                                    /*кол-во обрабатываемых   */
+#define  NOP 10                                   /*кол-во обрабатываемых   */
 						  /* команд                 */
 
 
@@ -127,6 +127,10 @@ int BAS_IND;                                      /*индекс масс.обл.загр.,  */
 {{'L' , ' ' , ' ' , ' ' , ' '} , '\x58', 4 , FRX}, /*машинных                */
 {{'A' , ' ' , ' ' , ' ' , ' '} , '\x5A', 4 , FRX}, /*операций                */
 {{'S' , ' ' , ' ' , ' ' , ' '} , '\x5B', 4 , FRX}, /*                        */
+{{'L' , 'H' , ' ' , ' ' , ' '} , '\x48', 4 , FRX},
+{{'O' , ' ' , ' ' , ' ' , ' '} , '\x56', 4 , FRX},
+{{'N' , ' ' , ' ' , ' ' , ' '} , '\x54', 4 , FRX},
+{{'S' , 'T' , 'H' , ' ' , ' '} , '\x40', 4 , FRX}
     };
 //..........................................................................
 //п р о г р а м м а реализации семантики команды BALR
@@ -189,6 +193,25 @@ int P_ST()                                        /*  п р о г р а м м а     */
   return 0;                                       /*успешное заверш.прогр.  */
  }
 
+int P_STH()
+ {
+  int sm, i;
+  char bytes[2];
+
+  ADDR = VR[B] + VR[X] + D;
+  sm = (int) (ADDR - I);
+
+  bytes[1] = VR[R1] & 0xFF;
+  bytes[0] = (VR[R1] >> 8) & 0xFF;
+
+  OBLZ[BAS_IND + CUR_IND + sm] = bytes[0];
+  OBLZ[BAS_IND + CUR_IND + sm + 1] = bytes[1];
+
+printf("STORING: %02hhx%02hhx\n", bytes[0], bytes[1]);
+
+  return 0;
+ }
+
 /*..........................................................................*/
 
 int P_L()                                         /*  п р о г р а м м а     */
@@ -205,6 +228,35 @@ int P_L()                                         /*  п р о г р а м м а     */
     OBLZ[BAS_IND + CUR_IND + sm + 3];             /*качестве 1-го операнда  */
 
    return 0;                                      /*успешное заверш.прогр.  */
+ }
+
+int P_LH()
+ {
+   int sm;
+   short OPERAND = 0; // 2 bytes
+   int sign = 0;
+   
+   ADDR = VR[B] + VR[X] + D;
+   sm = (int) ( ADDR - I );
+
+   printf("\n[addr %d vrb %d vrx %d d %d sm %d i %d]\n",
+          ADDR, VR[B], VR[X], D, sm, i);
+   printf("\nbas_ind %d cur_ind %d\n", BAS_IND, CUR_IND);
+
+   OPERAND =
+    OBLZ[BAS_IND + CUR_IND + sm] * 0x100 +
+    OBLZ[BAS_IND + CUR_IND + sm + 1];
+   sign = OPERAND >> 15; // sign bit
+   if (sign)
+     VR[R1] = OPERAND | 0xFFFF0000;
+   else
+     VR[R1] = OPERAND;
+
+printf("[BYTE 1: %02hhx]\n", OBLZ[BAS_IND + CUR_IND + sm]);
+printf("[BYTE 2: %02hhx]\n", OBLZ[BAS_IND + CUR_IND + sm + 1]);
+printf("[LOADED: %lx]\n", VR[R1]);
+
+   return 0;
  }
 
 /*..........................................................................*/
@@ -246,6 +298,45 @@ int P_S()                                         /* п р о г р а м м а      */
   return 0;                                       /*успешное заверш.прогр.  */
  }
 
+int P_O()
+ {
+  int sm;
+
+  ADDR = VR[B] + VR[X] + D;
+  sm = ( int ) ( ADDR - I );
+
+  ARG = OBLZ[BAS_IND + CUR_IND + sm] * 0x1000000L+
+     OBLZ[BAS_IND + CUR_IND + sm + 1] * 0x10000L +
+     OBLZ[BAS_IND + CUR_IND + sm + 2] * 0x100 +
+     OBLZ[BAS_IND + CUR_IND + sm + 3];
+
+printf("[REG: %x]\n", VR[R1]);
+printf("[ARG: %x]\n", ARG);
+
+printf("[WAS: %x ; WILL BE: % x]\n", VR[R1], VR[R1]|ARG);
+  VR[R1] |= ARG;
+
+  return 0;
+ }
+
+int P_N()
+ {
+  int sm;
+
+  ADDR = VR[B] + VR[X] + D;
+  sm = ( int ) ( ADDR - I );
+
+  ARG = OBLZ[BAS_IND + CUR_IND + sm] * 0x1000000L+
+     OBLZ[BAS_IND + CUR_IND + sm + 1] * 0x10000L +
+     OBLZ[BAS_IND + CUR_IND + sm + 2] * 0x100 +
+     OBLZ[BAS_IND + CUR_IND + sm + 3];
+
+printf("[WAS: %x ; WILL BE: % x]\n", VR[R1], VR[R1]&ARG);
+
+  VR[R1] &= ARG;
+
+  return 0;
+ }
 
 //..........................................................................
 int FRR(void)
@@ -545,6 +636,15 @@ SKIP:
     case '\x5A' : P_A();
 		   break;
     case '\x5B' : P_S();
+                   break;
+    case '\x48' : P_LH();
+                   break;
+    case '\x56' : P_O();
+                   break;
+    case '\x54' : P_N();
+                   break;
+    case '\x40' : P_STH();
+                   break;
    }
    
    goto BEGIN;	
@@ -686,14 +786,22 @@ CONT2:
 						  /*                        */
       K = TXT.STR_TXT.DLNOP [0];                  /* в переменной K длину   */
       K = (K << 8) + TXT.STR_TXT.DLNOP [1];       /* загружаемых данных     */
+      printf("\n[DLNOP: %d]\n[", K);
 
-      for ( N=0; N < K; N++ )                     /*загрузить данные с очер.*/
+      for ( N=0; N < K; N++ ) {                   /*загрузить данные с очер.*/
        OBLZ [ (int) J++ ] = TXT.STR_TXT.OPER [N]; /*об'ектной карты         */
+       printf("%d:'%d'", N,TXT.STR_TXT.OPER[N]);
+      }
      }
+     printf("]\n");
    }
    
 
-
+   int zzz = 0;
+   printf("\n\n===============\n");
+   for (zzz = 0; zzz < 500; ++zzz)
+      printf("%02hhx ", OBLZ[zzz]);
+   printf("\n===============\n\n");
 
   InitCurses();
 
